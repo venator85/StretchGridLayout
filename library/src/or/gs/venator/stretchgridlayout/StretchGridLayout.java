@@ -2,13 +2,45 @@ package or.gs.venator.stretchgridlayout;
 
 import android.content.Context;
 import android.content.res.TypedArray;
+import android.database.DataSetObserver;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
 import android.util.AttributeSet;
+import android.view.SoundEffectConstants;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ListAdapter;
 
 public class StretchGridLayout extends ViewGroup {
+
+	public interface OnItemClickListener {
+		/**
+		 * Callback method to be invoked when an item in this StretchGridLayout has been clicked.
+		 * <p>
+		 * Implementers can call getItemAtPosition(position) if they need to access the data associated with the selected item.
+		 * 
+		 * @param parent The StretchGridLayout where the click happened.
+		 * @param view The view within the StretchGridLayout that was clicked (this will be a view provided by the adapter)
+		 * @param position The position of the view in the adapter.
+		 * @param id The row id of the item that was clicked.
+		 */
+		void onItemClick(StretchGridLayout parent, View view, int position, long id);
+	}
+
+	private class InternalOnClickListener implements OnClickListener {
+		int mPosition;
+
+		public InternalOnClickListener(int position) {
+			mPosition = position;
+		}
+
+		@Override
+		public void onClick(View v) {
+			if (mOnItemClickListener != null && mAdapter != null) {
+				mOnItemClickListener.onItemClick(StretchGridLayout.this, v, mPosition, mAdapter.getItemId(mPosition));
+			}
+		}
+	}
 
 	public static final int AUTO = Integer.MIN_VALUE;
 
@@ -21,6 +53,22 @@ public class StretchGridLayout extends ViewGroup {
 	private Drawable rowSeparator;
 
 	private boolean forceEqualRowsHeight = true;
+
+	private ListAdapter mAdapter;
+	private OnItemClickListener mOnItemClickListener;
+	private boolean mAreAllItemsSelectable;
+
+	private DataSetObserver mDataObserver = new DataSetObserver() {
+		@Override
+		public void onChanged() {
+			setupChildren();
+		}
+
+		@Override
+		public void onInvalidated() {
+			setupChildren();
+		}
+	};
 
 	public StretchGridLayout(Context context) {
 		super(context);
@@ -325,6 +373,78 @@ public class StretchGridLayout extends ViewGroup {
 
 	public boolean isForceEqualRowsHeight() {
 		return forceEqualRowsHeight;
+	}
+
+	public void setAdapter(ListAdapter adapter) {
+		if (mAdapter != null) {
+			mAdapter.unregisterDataSetObserver(mDataObserver);
+		}
+		mAdapter = adapter;
+		if (mAdapter != null) {
+			mAdapter.registerDataSetObserver(mDataObserver);
+			mAreAllItemsSelectable = mAdapter.areAllItemsEnabled();
+		}
+		setupChildren();
+	}
+
+	private void setupChildren() {
+		removeAllViews();
+		if (mAdapter == null) {
+			return;
+		}
+		for (int i = 0; i < mAdapter.getCount(); i++) {
+			View child = mAdapter.getView(i, null, this);
+			if (mOnItemClickListener != null) {
+				attachOnItemClickListener(child, i);
+			}
+			addViewInLayout(child, -1, child.getLayoutParams(), true);
+		}
+	}
+
+	private void attachOnItemClickListener(View child, int position) {
+		if (mAreAllItemsSelectable || mAdapter.isEnabled(position)) {
+			child.setOnClickListener(new InternalOnClickListener(position));
+		}
+	}
+
+	/**
+	 * Register a callback to be invoked when an item in this LinearListView has been clicked.
+	 * 
+	 * @param listener The callback that will be invoked.
+	 */
+	public void setOnItemClickListener(OnItemClickListener listener) {
+		mOnItemClickListener = listener;
+		if (mOnItemClickListener != null) {
+			for (int i = 0; i < getChildCount(); i++) {
+				View child = getChildAt(i);
+				attachOnItemClickListener(child, i);
+			}
+		}
+	}
+
+	/**
+	 * @return The callback to be invoked with an item in this LinearListView has been clicked, or null id no callback has been set.
+	 */
+	public final OnItemClickListener getOnItemClickListener() {
+		return mOnItemClickListener;
+	}
+
+	/**
+	 * Call the OnItemClickListener, if it is defined.
+	 * 
+	 * @param view The view within the LinearListView that was clicked.
+	 * @param position The position of the view in the adapter.
+	 * @param id The row id of the item that was clicked.
+	 * @return True if there was an assigned OnItemClickListener that was called, false otherwise is returned.
+	 */
+	public boolean performItemClick(View view, int position, long id) {
+		if (mOnItemClickListener != null) {
+			playSoundEffect(SoundEffectConstants.CLICK);
+			mOnItemClickListener.onItemClick(this, view, position, id);
+			return true;
+		}
+
+		return false;
 	}
 
 }
